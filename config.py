@@ -1,15 +1,17 @@
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
+# Используем os.environ для Render
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
 
-BOT_TOKEN = os.getenv('8280338020:AAEPSrOAulipX1IYNGO_vppatAdsC0yc-t4')
-ADMIN_IDS = [356633485]  ## Замени на свой ID из @userinfobot
-WEBHOOK_URL = os.getenv('https://loyalty-telegram-bot-1tej.onrender.com')  # URL твоего Render сервиса
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN not found in environment variables!")
 
-# Конфигурация бота
+ADMIN_IDS = [123456789]  # Замени на свой ID
+
 BOT_CONFIG = {
     'welcome_bonus': 100,
     'cashback_percent': 5,
     'max_user_id': 3000
 }
+
+print(f"✅ BOT_TOKEN loaded: {BOT_TOKEN[:10]}...")  # Для отладки

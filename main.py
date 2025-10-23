@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, filters
 from flask import Flask, request
 
@@ -80,6 +81,9 @@ def setup_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(admin_button_handler, pattern='^admin_'))
     app_instance.add_handler(CallbackQueryHandler(admin_back_handler, pattern='^admin_back$'))
 
+    # Обработчик текстовых сообщений для помощи
+    app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, help_handler))
+
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик текстовых сообщений"""
@@ -89,19 +93,30 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /start - Начать регистрацию
 /menu - Главное меню
 /admin - Панель администратора (только для админов)
+
+💎 Система лояльности:
+• Регистрация с получением 100 бонусных баллов
+• Бронирование столов
+• Списание баллов (требует подтверждения админа)
+• История операций
+
+🎫 Для бронирования стола используйте кнопку в меню.
     """
     await update.message.reply_text(help_text)
 
 
 @app.route('/')
 def index():
-    return "🤖 Telegram Loyalty Bot is running!"
+    return "🤖 Telegram Loyalty Bot is running via Webhook!"
 
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Обработчик webhook от Telegram"""
     try:
+        if not application:
+            return 'Bot not initialized', 500
+
         # Обрабатываем обновление от Telegram
         update = Update.de_json(request.get_json(), application.bot)
         application.process_update(update)
@@ -111,37 +126,95 @@ def webhook():
         return 'error', 500
 
 
+def start_polling():
+    """Запуск бота через polling"""
+    try:
+        logger.info("🤖 Запуск бота через polling...")
+        application.run_polling()
+    except Exception as e:
+        logger.error(f"❌ Ошибка polling: {e}")
+
+
 def init_bot():
     """Инициализация бота"""
     global application
 
+    logger.info("🚀 Инициализация бота...")
+
     if not BOT_TOKEN:
         logger.error("❌ BOT_TOKEN не найден")
-        return
+        return False
+
+    logger.info(f"✅ BOT_TOKEN загружен: {BOT_TOKEN[:10]}...")
 
     # Инициализация базы данных
-    db = Database()
-    logger.info("✅ База данных инициализирована")
+    try:
+        db = Database()
+        logger.info("✅ База данных инициализирована")
+    except Exception as e:
+        logger.error(f"❌ Ошибка БД: {e}")
+        return False
 
     # Создание приложения
-    application = Application.builder().token(BOT_TOKEN).build()
+    try:
+        application = Application.builder().token(BOT_TOKEN).build()
+        logger.info("✅ Приложение бота создано")
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания приложения: {e}")
+        return False
 
     # Настройка обработчиков
-    setup_handlers(application)
-    logger.info("✅ Обработчики настроены")
+    try:
+        setup_handlers(application)
+        logger.info("✅ Обработчики настроены")
+    except Exception as e:
+        logger.error(f"❌ Ошибка настройки обработчиков: {e}")
+        return False
 
-    # Устанавливаем webhook
+    # Устанавливаем webhook ИЛИ polling
     webhook_url = os.environ.get('RENDER_EXTERNAL_URL', '') + '/webhook'
-    if webhook_url:
-        application.bot.set_webhook(webhook_url)
-        logger.info(f"✅ Webhook установлен: {webhook_url}")
+
+    if webhook_url and webhook_url.startswith('https://'):
+        try:
+            # Удаляем старый webhook и устанавливаем новый
+            application.bot.delete_webhook()
+            application.bot.set_webhook(webhook_url)
+            logger.info(f"✅ Webhook установлен: {webhook_url}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка webhook: {e}")
+            logger.info("🔄 Переключаемся на polling...")
+            # Запускаем polling в отдельном потоке
+            polling_thread = threading.Thread(target=start_polling)
+            polling_thread.daemon = True
+            polling_thread.start()
+            return True
     else:
-        logger.info("ℹ️  Webhook URL не найден, используем polling")
+        logger.info("🔄 Webhook URL не найден, используем polling")
+        # Запускаем polling в отдельном потоке
+        polling_thread = threading.Thread(target=start_polling)
+        polling_thread.daemon = True
+        polling_thread.start()
+        return True
 
 
-# Инициализируем бот при запуске
-init_bot()
+def run_flask():
+    """Запуск Flask сервера"""
+    port = int(os.environ.get("PORT", 5000))
+    logger.info(f"🌐 Flask запускается на порту {port}")
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    logger.info("🎯 Запуск приложения...")
+
+    # Инициализируем бота
+    bot_initialized = init_bot()
+
+    if not bot_initialized:
+        logger.error("❌ Не удалось инициализировать бота")
+    else:
+        logger.info("✅ Бот успешно инициализирован")
+
+    # Запускаем Flask
+    run_flask()
