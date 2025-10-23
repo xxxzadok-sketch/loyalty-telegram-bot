@@ -3,7 +3,7 @@ import os
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, filters
 from flask import Flask, request
 
-from config import BOT_TOKEN, WEBHOOK_URL
+from config import BOT_TOKEN
 from database import Database
 
 # Импорт обработчиков
@@ -66,46 +66,10 @@ def setup_handlers(app_instance):
         name="points_redemption"
     )
 
-    # Обработчик админ-панели (начисление баллов)
-    admin_add_points_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(start_add_points, pattern='^admin_add_points$')],
-        states={
-            ADMIN_ADD_POINTS_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_user_for_add_points)],
-            ADMIN_ADD_POINTS_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_amount_for_add_points)]
-        },
-        fallbacks=[CommandHandler('cancel', cancel_admin_operation)],
-        name="admin_add_points"
-    )
-
-    # Обработчик админ-панели (списание баллов)
-    admin_remove_points_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(start_remove_points, pattern='^admin_remove_points$')],
-        states={
-            ADMIN_REMOVE_POINTS_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_user_for_remove_points)],
-            ADMIN_REMOVE_POINTS_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_amount_for_remove_points)]
-        },
-        fallbacks=[CommandHandler('cancel', cancel_admin_operation)],
-        name="admin_remove_points"
-    )
-
-    # Обработчик рассылки
-    broadcast_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(start_broadcast, pattern='^admin_broadcast$')],
-        states={
-            BROADCAST_MESSAGE: [MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO, get_broadcast_message)],
-            BROADCAST_CONFIRM: [CallbackQueryHandler(confirm_broadcast, pattern='^broadcast_')]
-        },
-        fallbacks=[CommandHandler('cancel', cancel_broadcast)],
-        name="admin_broadcast"
-    )
-
     # Добавляем все обработчики
     app_instance.add_handler(reg_conv_handler)
     app_instance.add_handler(book_conv_handler)
     app_instance.add_handler(redeem_conv_handler)
-    app_instance.add_handler(admin_add_points_conv)
-    app_instance.add_handler(admin_remove_points_conv)
-    app_instance.add_handler(broadcast_conv)
 
     # Обработчики команд
     app_instance.add_handler(CommandHandler('admin', admin_handler))
@@ -115,10 +79,6 @@ def setup_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(user_button_handler, pattern='^(balance|history|main_menu)$'))
     app_instance.add_handler(CallbackQueryHandler(admin_button_handler, pattern='^admin_'))
     app_instance.add_handler(CallbackQueryHandler(admin_back_handler, pattern='^admin_back$'))
-    app_instance.add_handler(CallbackQueryHandler(admin_button_handler, pattern='^(admin_approve_|admin_reject_)'))
-
-    # Обработчик текстовых сообщений (для помощи)
-    app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, help_handler))
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -129,21 +89,13 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /start - Начать регистрацию
 /menu - Главное меню
 /admin - Панель администратора (только для админов)
-
-💎 Система лояльности:
-• Регистрация с получением 100 бонусных баллов
-• Бронирование столов
-• Списание баллов (требует подтверждения админа)
-• История операций
-
-🎫 Для бронирования стола используйте кнопку в меню.
     """
     await update.message.reply_text(help_text)
 
 
 @app.route('/')
 def index():
-    return "🤖 Telegram Loyalty Bot is running via Webhook!"
+    return "🤖 Telegram Loyalty Bot is running!"
 
 
 @app.route('/webhook', methods=['POST'])
@@ -159,16 +111,12 @@ def webhook():
         return 'error', 500
 
 
-def main():
-    """Основная функция инициализации"""
+def init_bot():
+    """Инициализация бота"""
     global application
 
     if not BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN не найден в переменных окружения")
-        return
-
-    if not WEBHOOK_URL:
-        logger.error("❌ WEBHOOK_URL не найден в переменных окружения")
+        logger.error("❌ BOT_TOKEN не найден")
         return
 
     # Инициализация базы данных
@@ -182,21 +130,18 @@ def main():
     setup_handlers(application)
     logger.info("✅ Обработчики настроены")
 
-    # Настройка webhook
-    try:
-        # Устанавливаем webhook
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=int(os.environ.get("PORT", 5000)),
-            url_path=BOT_TOKEN,
-            webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",
-            secret_token='WEBHOOK_SECRET'  # Опционально для безопасности
-        )
-        logger.info("✅ Webhook установлен")
-    except Exception as e:
-        logger.error(f"❌ Ошибка настройки webhook: {e}")
+    # Устанавливаем webhook
+    webhook_url = os.environ.get('RENDER_EXTERNAL_URL', '') + '/webhook'
+    if webhook_url:
+        application.bot.set_webhook(webhook_url)
+        logger.info(f"✅ Webhook установлен: {webhook_url}")
+    else:
+        logger.info("ℹ️  Webhook URL не найден, используем polling")
 
+
+# Инициализируем бот при запуске
+init_bot()
 
 if __name__ == '__main__':
-    # Запускаем инициализацию
-    main()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
