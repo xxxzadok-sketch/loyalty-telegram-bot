@@ -1,38 +1,13 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Database
-*.db
-*.sqlite3
-
-# Environment variables
+# Environment
 .env
 .env.local
 .env.prod
 
-# PyCharm
-.idea/
-*.iml
-*.ipr
-*.iws
+# Config files
+*.yaml
+*.yml
+render.yaml
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-logs/
-
-# Temp files
-*.tmp
-*.temp
+# Database
+*.db
+*.sqlite3

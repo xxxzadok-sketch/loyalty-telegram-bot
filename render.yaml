@@ -7,7 +7,7 @@ services:
     startCommand: gunicorn main:app
     envVars:
       - key: BOT_TOKEN
-        value: 8280338020:AAF89sCUSzDNLKf2dZ0AW_Swh7r764boY2Q
+        value: 8280338020:AAEPSrOAulipX1IYNGO_vppatAdsC0yc-t4
       - key: WEBHOOK_URL
         fromService:
           type: web
