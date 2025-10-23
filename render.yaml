@@ -1,10 +1,15 @@
 services:
   - type: web
-    name: loyalty-bot
+    name: loyalty-bot-webhook
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
+    startCommand: gunicorn main:app
     envVars:
       - key: BOT_TOKEN
-        value: your_bot_token_here
+        value: 8280338020:AAF89sCUSzDNLKf2dZ0AW_Swh7r764boY2Q
+      - key: WEBHOOK_URL
+        fromService:
+          type: web
+          name: loyalty-bot-webhook
+          property: url

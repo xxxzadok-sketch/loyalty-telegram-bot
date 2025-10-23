@@ -1,8 +1,9 @@
 import logging
 import os
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, filters
+from flask import Flask, request
 
-from config import BOT_TOKEN
+from config import BOT_TOKEN, WEBHOOK_URL
 from database import Database
 
 # Импорт обработчиков
@@ -19,8 +20,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Инициализация Flask
+app = Flask(__name__)
 
-def setup_handlers(application):
+# Глобальная переменная для application
+application = None
+
+
+def setup_handlers(app_instance):
     """Настройка всех обработчиков"""
 
     # Обработчик регистрации пользователя
@@ -93,25 +100,25 @@ def setup_handlers(application):
     )
 
     # Добавляем все обработчики
-    application.add_handler(reg_conv_handler)
-    application.add_handler(book_conv_handler)
-    application.add_handler(redeem_conv_handler)
-    application.add_handler(admin_add_points_conv)
-    application.add_handler(admin_remove_points_conv)
-    application.add_handler(broadcast_conv)
+    app_instance.add_handler(reg_conv_handler)
+    app_instance.add_handler(book_conv_handler)
+    app_instance.add_handler(redeem_conv_handler)
+    app_instance.add_handler(admin_add_points_conv)
+    app_instance.add_handler(admin_remove_points_conv)
+    app_instance.add_handler(broadcast_conv)
 
     # Обработчики команд
-    application.add_handler(CommandHandler('admin', admin_handler))
-    application.add_handler(CommandHandler('menu', show_main_menu))
+    app_instance.add_handler(CommandHandler('admin', admin_handler))
+    app_instance.add_handler(CommandHandler('menu', show_main_menu))
 
     # Обработчики callback запросов
-    application.add_handler(CallbackQueryHandler(user_button_handler, pattern='^(balance|history|main_menu)$'))
-    application.add_handler(CallbackQueryHandler(admin_button_handler, pattern='^admin_'))
-    application.add_handler(CallbackQueryHandler(admin_back_handler, pattern='^admin_back$'))
-    application.add_handler(CallbackQueryHandler(admin_button_handler, pattern='^(admin_approve_|admin_reject_)'))
+    app_instance.add_handler(CallbackQueryHandler(user_button_handler, pattern='^(balance|history|main_menu)$'))
+    app_instance.add_handler(CallbackQueryHandler(admin_button_handler, pattern='^admin_'))
+    app_instance.add_handler(CallbackQueryHandler(admin_back_handler, pattern='^admin_back$'))
+    app_instance.add_handler(CallbackQueryHandler(admin_button_handler, pattern='^(admin_approve_|admin_reject_)'))
 
     # Обработчик текстовых сообщений (для помощи)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, help_handler))
+    app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, help_handler))
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -134,11 +141,34 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(help_text)
 
 
+@app.route('/')
+def index():
+    return "🤖 Telegram Loyalty Bot is running via Webhook!"
+
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Обработчик webhook от Telegram"""
+    try:
+        # Обрабатываем обновление от Telegram
+        update = Update.de_json(request.get_json(), application.bot)
+        application.process_update(update)
+        return 'ok'
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return 'error', 500
+
+
 def main():
-    """Основная функция запуска бота"""
+    """Основная функция инициализации"""
+    global application
+
     if not BOT_TOKEN:
         logger.error("❌ BOT_TOKEN не найден в переменных окружения")
-        print("Пожалуйста, установите BOT_TOKEN в файле .env")
+        return
+
+    if not WEBHOOK_URL:
+        logger.error("❌ WEBHOOK_URL не найден в переменных окружения")
         return
 
     # Инициализация базы данных
@@ -152,20 +182,21 @@ def main():
     setup_handlers(application)
     logger.info("✅ Обработчики настроены")
 
-    # Запуск бота
-    logger.info("🤖 Бот запускается...")
-    print("=" * 50)
-    print("🤖 Бот системы лояльности запущен!")
-    print(f"🐍 Python version: 3.12")
-    print(f"💾 База данных: loyalty.db")
-    print("=" * 50)
-
+    # Настройка webhook
     try:
-        application.run_polling()
+        # Устанавливаем webhook
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=int(os.environ.get("PORT", 5000)),
+            url_path=BOT_TOKEN,
+            webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",
+            secret_token='WEBHOOK_SECRET'  # Опционально для безопасности
+        )
+        logger.info("✅ Webhook установлен")
     except Exception as e:
-        logger.error(f"❌ Ошибка запуска бота: {e}")
-        print(f"❌ Ошибка: {e}")
+        logger.error(f"❌ Ошибка настройки webhook: {e}")
 
 
 if __name__ == '__main__':
+    # Запускаем инициализацию
     main()
