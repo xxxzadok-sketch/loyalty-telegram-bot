@@ -5,7 +5,7 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv('8280338020:AAEPSrOAulipX1IYNGO_vppatAdsC0yc-t4')
 ADMIN_IDS = [356633485]  ## Замени на свой ID из @userinfobot
-WEBHOOK_URL = os.getenv('https://loyalty-telegram-bot-2igj.onrender.com')  # URL твоего Render сервиса
+WEBHOOK_URL = os.getenv('https://loyalty-telegram-bot-1tej.onrender.com')  # URL твоего Render сервиса
 
 # Конфигурация бота
 BOT_CONFIG = {
