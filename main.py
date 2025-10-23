@@ -1,6 +1,7 @@
 import logging
 import os
 import threading
+import asyncio
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, filters
 from flask import Flask, request
 
@@ -111,31 +112,17 @@ def index():
 
 
 @app.route('/webhook', methods=['POST'])
-def webhook():
+async def webhook():
     """Обработчик webhook от Telegram"""
     try:
         if not application:
             return 'Bot not initialized', 500
 
-        # Обрабатываем обновление от Telegram асинхронно
+        # Обрабатываем обновление от Telegram
         update = Update.de_json(request.get_json(), application.bot)
 
-        # Запускаем обработку в отдельном потоке с event loop
-        def process_update_async():
-            import asyncio
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(application.process_update(update))
-                loop.close()
-            except Exception as e:
-                logger.error(f"Error processing update: {e}")
-
-        # Запускаем в отдельном потоке
-        import threading
-        thread = threading.Thread(target=process_update_async)
-        thread.daemon = True
-        thread.start()
+        # Асинхронно обрабатываем обновление
+        await application.process_update(update)
 
         return 'ok'
     except Exception as e:
@@ -143,16 +130,7 @@ def webhook():
         return 'error', 500
 
 
-def start_polling():
-    """Запуск бота через polling"""
-    try:
-        logger.info("🤖 Запуск бота через polling...")
-        application.run_polling()
-    except Exception as e:
-        logger.error(f"❌ Ошибка polling: {e}")
-
-
-def init_bot():
+async def init_bot():
     """Инициализация бота"""
     global application
 
@@ -172,10 +150,18 @@ def init_bot():
         logger.error(f"❌ Ошибка БД: {e}")
         return False
 
-    # Создание приложения
+    # Создание приложения с инициализацией для webhook
     try:
-        application = Application.builder().token(BOT_TOKEN).build()
-        logger.info("✅ Приложение бота создано")
+        application = (
+            Application.builder()
+            .token(BOT_TOKEN)
+            .build()
+        )
+
+        # Инициализируем приложение для webhook
+        await application.initialize()  # Это критически важно!
+
+        logger.info("✅ Приложение бота создано и инициализировано")
     except Exception as e:
         logger.error(f"❌ Ошибка создания приложения: {e}")
         return False
@@ -188,60 +174,45 @@ def init_bot():
         logger.error(f"❌ Ошибка настройки обработчиков: {e}")
         return False
 
-    # Устанавливаем webhook ИЛИ polling
+    # Устанавливаем webhook
     webhook_url = os.environ.get('RENDER_EXTERNAL_URL', '') + '/webhook'
 
     if webhook_url and webhook_url.startswith('https://'):
         try:
-            # Запускаем webhook setup в отдельном потоке с event loop
-            def setup_webhook():
-                import asyncio
-                try:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-
-                    async def set_webhook_async():
-                        await application.bot.delete_webhook()
-                        await application.bot.set_webhook(webhook_url)
-
-                    loop.run_until_complete(set_webhook_async())
-                    loop.close()
-                    logger.info(f"✅ Webhook установлен: {webhook_url}")
-                except Exception as e:
-                    logger.error(f"❌ Ошибка webhook: {e}")
-                    start_polling()
-
-            webhook_thread = threading.Thread(target=setup_webhook)
-            webhook_thread.daemon = True
-            webhook_thread.start()
-
+            await application.bot.delete_webhook()
+            await application.bot.set_webhook(webhook_url)
+            logger.info(f"✅ Webhook установлен: {webhook_url}")
+            return True
         except Exception as e:
-            logger.error(f"❌ Ошибка настройки webhook: {e}")
-            start_polling()
+            logger.error(f"❌ Ошибка webhook: {e}")
+            return False
     else:
-        logger.info("🔄 Webhook URL не найден, используем polling")
-        start_polling()
-
-    return True
+        logger.error("❌ Webhook URL не найден")
+        return False
 
 
-def run_flask():
-    """Запуск Flask сервера"""
-    port = int(os.environ.get("PORT", 5000))
-    logger.info(f"🌐 Flask запускается на порту {port}")
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
-
-
-if __name__ == '__main__':
+async def main():
+    """Основная асинхронная функция"""
     logger.info("🎯 Запуск приложения...")
 
     # Инициализируем бота
-    bot_initialized = init_bot()
+    bot_initialized = await init_bot()
 
     if not bot_initialized:
         logger.error("❌ Не удалось инициализировать бота")
     else:
         logger.info("✅ Бот успешно инициализирован")
 
-    # Запускаем Flask
-    run_flask()
+    # Запускаем Flask в отдельном потоке
+    def run_flask():
+        port = int(os.environ.get("PORT", 5000))
+        logger.info(f"🌐 Flask запускается на порту {port}")
+        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
