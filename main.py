@@ -215,4 +215,7 @@ async def main():
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    # Запускаем Flask сервер (блокирующий вызов)
+    port = int(os.environ.get("PORT", 10000))
+    logger.info(f"🚀 Запуск Flask сервера на порту {port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
