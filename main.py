@@ -117,9 +117,26 @@ def webhook():
         if not application:
             return 'Bot not initialized', 500
 
-        # Обрабатываем обновление от Telegram
+        # Обрабатываем обновление от Telegram асинхронно
         update = Update.de_json(request.get_json(), application.bot)
-        application.process_update(update)
+
+        # Запускаем обработку в отдельном потоке с event loop
+        def process_update_async():
+            import asyncio
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(application.process_update(update))
+                loop.close()
+            except Exception as e:
+                logger.error(f"Error processing update: {e}")
+
+        # Запускаем в отдельном потоке
+        import threading
+        thread = threading.Thread(target=process_update_async)
+        thread.daemon = True
+        thread.start()
+
         return 'ok'
     except Exception as e:
         logger.error(f"Webhook error: {e}")
