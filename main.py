@@ -176,26 +176,36 @@ def init_bot():
 
     if webhook_url and webhook_url.startswith('https://'):
         try:
-            # Удаляем старый webhook и устанавливаем новый
-            application.bot.delete_webhook()
-            application.bot.set_webhook(webhook_url)
-            logger.info(f"✅ Webhook установлен: {webhook_url}")
-            return True
+            # Запускаем webhook setup в отдельном потоке с event loop
+            def setup_webhook():
+                import asyncio
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                    async def set_webhook_async():
+                        await application.bot.delete_webhook()
+                        await application.bot.set_webhook(webhook_url)
+
+                    loop.run_until_complete(set_webhook_async())
+                    loop.close()
+                    logger.info(f"✅ Webhook установлен: {webhook_url}")
+                except Exception as e:
+                    logger.error(f"❌ Ошибка webhook: {e}")
+                    start_polling()
+
+            webhook_thread = threading.Thread(target=setup_webhook)
+            webhook_thread.daemon = True
+            webhook_thread.start()
+
         except Exception as e:
-            logger.error(f"❌ Ошибка webhook: {e}")
-            logger.info("🔄 Переключаемся на polling...")
-            # Запускаем polling в отдельном потоке
-            polling_thread = threading.Thread(target=start_polling)
-            polling_thread.daemon = True
-            polling_thread.start()
-            return True
+            logger.error(f"❌ Ошибка настройки webhook: {e}")
+            start_polling()
     else:
         logger.info("🔄 Webhook URL не найден, используем polling")
-        # Запускаем polling в отдельном потоке
-        polling_thread = threading.Thread(target=start_polling)
-        polling_thread.daemon = True
-        polling_thread.start()
-        return True
+        start_polling()
+
+    return True
 
 
 def run_flask():
