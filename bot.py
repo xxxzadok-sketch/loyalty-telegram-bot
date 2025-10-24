@@ -1,6 +1,8 @@
 # bot.py
 import logging
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, filters
+from telegram import Update
+from telegram.ext import ContextTypes
 from database import Database
 
 # Импорт обработчиков
@@ -10,9 +12,7 @@ from handlers.redemption_handlers import *
 from handlers.admin_handlers import *
 from handlers.broadcast_handlers import *
 
-
 logger = logging.getLogger(__name__)
-
 
 def create_application():
     """Создание и настройка приложения бота"""
@@ -34,10 +34,9 @@ def create_application():
 
     return application
 
-
 def setup_handlers(app):
     """Настройка всех обработчиков"""
-    # Обработчик регистрации пользователя
+    # Обработчик регистрации пользователя - ДОБАВИТЬ persistent=True и allow_reentry=True
     reg_conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
@@ -47,10 +46,12 @@ def setup_handlers(app):
             CONFIRM: [CallbackQueryHandler(confirm_registration, pattern='^confirm_')]
         },
         fallbacks=[CommandHandler('cancel', cancel_registration)],
-        name="user_registration"
+        name="user_registration",
+        persistent=True,  # ⭐ ВАЖНО: сохраняет состояние
+        allow_reentry=True  # ⭐ Позволяет перезапускать
     )
 
-    # Обработчик бронирования стола
+    # Обработчик бронирования стола - ТАКЖЕ ДОБАВИТЬ
     book_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_booking, pattern='^book_table$')],
         states={
@@ -60,17 +61,21 @@ def setup_handlers(app):
             BOOK_CONFIRM: [CallbackQueryHandler(confirm_booking, pattern='^booking_')]
         },
         fallbacks=[CommandHandler('cancel', cancel_booking)],
-        name="table_booking"
+        name="table_booking",
+        persistent=True,  # ⭐ ВАЖНО
+        allow_reentry=True  # ⭐ ВАЖНО
     )
 
-    # Обработчик списания баллов
+    # Обработчик списания баллов - ТАКЖЕ ДОБАВИТЬ
     redeem_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_redemption, pattern='^redeem_points$')],
         states={
             REDEEM_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_redemption_amount)]
         },
         fallbacks=[CommandHandler('cancel', cancel_redemption)],
-        name="points_redemption"
+        name="points_redemption",
+        persistent=True,  # ⭐ ВАЖНО
+        allow_reentry=True  # ⭐ ВАЖНО
     )
 
     # Добавляем все обработчики
@@ -78,10 +83,9 @@ def setup_handlers(app):
     app.add_handler(book_conv_handler)
     app.add_handler(redeem_conv_handler)
 
-    # Обработчики команд
+    # Обработчики команд - ИСПРАВИТЬ дублирование /menu
     app.add_handler(CommandHandler('admin', admin_handler))
-    app.add_handler(CommandHandler('menu', show_main_menu))
-    app.add_handler(CommandHandler('menu', menu_command))
+    app.add_handler(CommandHandler('menu', menu_command))  # ⭐ ОСТАВИТЬ ТОЛЬКО ЭТОТ
 
     # Обработчики callback запросов
     app.add_handler(CallbackQueryHandler(user_button_handler, pattern='^(balance|history|main_menu)$'))
@@ -90,8 +94,8 @@ def setup_handlers(app):
 
     # Обработчик текстовых сообщений для помощи
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, help_handler))
-# В КОНЕЦ bot.py ДОБАВЬТЕ:
 
+# В КОНЕЦ bot.py ДОБАВЬТЕ:
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик текстовых сообщений"""
     help_text = """
