@@ -23,6 +23,19 @@ def index():
     return "🤖 Telegram Loyalty Bot is running via Webhook!"
 
 
+def set_commands():
+    """Установка команд бота"""
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        from commands import set_bot_commands
+        loop.run_until_complete(set_bot_commands())
+        loop.close()
+        logger.info("✅ Команды бота установлены")
+    except Exception as e:
+        logger.error(f"❌ Ошибка установки команд: {e}")
+
+
 def init_bot():
     """Инициализация бота"""
     global application
@@ -68,19 +81,8 @@ def webhook():
         update_data = request.get_json()
         update = Update.de_json(update_data, application.bot)
 
-        # Используем существующий event loop вместо создания нового
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        # Запускаем обработку
-        if loop.is_running():
-            asyncio.create_task(application.process_update(update))
-        else:
-            loop.run_until_complete(application.process_update(update))
+        # Просто добавляем в очередь - PTB сам обработает
+        application.update_queue.put_nowait(update)
 
         return 'ok'
 
@@ -89,8 +91,11 @@ def webhook():
         return 'error', 500
 
 
-# Инициализируем бота при импорте
+# Инициализируем бот при импорте
 application = init_bot()
+
+# Устанавливаем команды бота после инициализации
+set_commands()
 
 if __name__ == '__main__':
     # Запускаем Flask

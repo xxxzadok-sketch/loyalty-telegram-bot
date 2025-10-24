@@ -81,6 +81,7 @@ def setup_handlers(app):
     # Обработчики команд
     app.add_handler(CommandHandler('admin', admin_handler))
     app.add_handler(CommandHandler('menu', show_main_menu))
+    app.add_handler(CommandHandler('menu', menu_command))
 
     # Обработчики callback запросов
     app.add_handler(CallbackQueryHandler(user_button_handler, pattern='^(balance|history|main_menu)$'))

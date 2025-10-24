@@ -123,6 +123,16 @@ async def confirm_registration(update: Update, context: ContextTypes.DEFAULT_TYP
         return FIRST_NAME
 
 
+async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик команды /menu"""
+    user = db.get_user_by_telegram_id(update.effective_user.id)
+
+    if not user:
+        await update.message.reply_text("❌ Сначала зарегистрируйтесь с помощью /start")
+        return
+
+    await show_main_menu(update, context)
+
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("💎 Мой баланс", callback_data="balance")],
