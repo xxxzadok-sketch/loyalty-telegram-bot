@@ -81,8 +81,25 @@ def webhook():
         update_data = request.get_json()
         update = Update.de_json(update_data, application.bot)
 
-        # Просто добавляем в очередь - PTB сам обработает
-        application.update_queue.put_nowait(update)
+        # Запускаем обработку в отдельном потоке
+        import threading
+        def process_update():
+            try:
+                import asyncio
+                # Создаем новый event loop для этого потока
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+                # Обрабатываем обновление
+                loop.run_until_complete(application.process_update(update))
+                loop.close()
+            except Exception as e:
+                logger.error(f"Error processing update: {e}")
+
+        # Запускаем в отдельном потоке
+        thread = threading.Thread(target=process_update)
+        thread.daemon = True
+        thread.start()
 
         return 'ok'
 
