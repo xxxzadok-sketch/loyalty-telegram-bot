@@ -68,16 +68,21 @@ def webhook():
         update_data = request.get_json()
         update = Update.de_json(update_data, application.bot)
 
-        # Создаем новое событийное loop для обработки
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
+        # Используем существующий event loop вместо создания нового
+        import asyncio
         try:
-            # Обрабатываем обновление
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        # Запускаем обработку
+        if loop.is_running():
+            asyncio.create_task(application.process_update(update))
+        else:
             loop.run_until_complete(application.process_update(update))
-            return 'ok'
-        finally:
-            loop.close()
+
+        return 'ok'
 
     except Exception as e:
         logger.error(f"Webhook error: {e}")
