@@ -109,14 +109,13 @@ def index():
     return "🤖 Telegram Loyalty Bot is running via Webhook!"
 
 
-# Перенесите инициализацию в глобальную область
 def init_bot():
     """Инициализация бота"""
-    global application  # ← ДОБАВЬТЕ ЭТО
+    global application
 
     if not BOT_TOKEN:
         logger.error("❌ BOT_TOKEN не найден")
-        return None  # ← ВОЗВРАЩАЕМ None если ошибка
+        return
 
     # Инициализация базы данных
     db = Database()
@@ -129,13 +128,17 @@ def init_bot():
     setup_handlers(application)
     logger.info("✅ Обработчики настроены")
 
-    # Устанавливаем webhook
+    # Устанавливаем webhook СИНХРОННО
     webhook_url = os.environ.get('RENDER_EXTERNAL_URL', '') + '/webhook'
     if webhook_url and webhook_url.startswith('https://'):
-        await application.bot.set_webhook(webhook_url)
-        logger.info(f"✅ Webhook установлен: {webhook_url}")
+        try:
+            # Используем run_method для синхронного вызова асинхронной функции
+            application.run_method(lambda: application.bot.set_webhook(webhook_url))
+            logger.info(f"✅ Webhook установлен: {webhook_url}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка установки webhook: {e}")
     else:
-        logger.info("ℹ️ Webhook URL не найден, используем polling")
+        logger.info("ℹ️ Webhook URL не найден")
 
     return application  # ← ВОЗВРАЩАЕМ application
 
@@ -147,16 +150,13 @@ application = init_bot()
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Обработчик webhook от Telegram"""
-    global application  # ← ДОБАВЬТЕ ЭТО
-
-    if application is None:
-        logger.error("❌ Application не инициализирована")
-        return 'error', 500
-
     try:
         # Обрабатываем обновление от Telegram
         update = Update.de_json(request.get_json(), application.bot)
-        application.update_queue.put(update)  # ← используем update_queue
+
+        # Используем run_method для синхронного вызова асинхронной функции
+        application.run_method(lambda: application.process_update(update))
+
         return 'ok'
     except Exception as e:
         logger.error(f"Webhook error: {e}")
