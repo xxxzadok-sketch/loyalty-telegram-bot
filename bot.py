@@ -26,7 +26,7 @@ def create_application():
     logger.info("✅ База данных инициализирована")
 
     # Создание приложения
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
 
     # Настройка обработчиков
     setup_handlers(application)
