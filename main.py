@@ -1,7 +1,14 @@
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ConversationHandler
 import config
 from handlers import user_handlers, admin_handlers, booking_handlers, broadcast_handlers, redemption_handlers
 from database import init_db
+import logging
+
+# Настройка логирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
 
 def main():
@@ -13,30 +20,31 @@ def main():
 
     # Регистрация обработчиков пользователя
     application.add_handler(CommandHandler("start", user_handlers.start))
+    application.add_handler(CommandHandler("balance", user_handlers.balance))
+
+    # Обработчики регистрации
     application.add_handler(CallbackQueryHandler(user_handlers.handle_registration, pattern="^confirm_registration$"))
     application.add_handler(CallbackQueryHandler(user_handlers.edit_registration, pattern="^edit_registration$"))
 
-    # Регистрация обработчиков бронирования
+    # Обработчики бронирования
     application.add_handler(CallbackQueryHandler(booking_handlers.start_booking, pattern="^booking$"))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, booking_handlers.handle_booking_data))
 
-    # Регистрация обработчиков списания баллов
+    # Обработчики списания баллов
     application.add_handler(CallbackQueryHandler(redemption_handlers.start_redemption, pattern="^redeem_bonus$"))
-    application.add_handler(
-        CallbackQueryHandler(redemption_handlers.handle_redemption_confirmation, pattern="^redeem_confirm_"))
     application.add_handler(CallbackQueryHandler(redemption_handlers.handle_admin_redemption, pattern="^admin_redeem_"))
 
-    # Регистрация обработчиков администратора
+    # Обработчики администратора
     application.add_handler(CommandHandler("admin", admin_handlers.admin_panel))
     application.add_handler(CallbackQueryHandler(admin_handlers.handle_admin_action, pattern="^admin_"))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_handlers.handle_admin_input))
 
-    # Регистрация обработчиков рассылки
+    # Обработчики рассылки
     application.add_handler(CallbackQueryHandler(broadcast_handlers.start_broadcast, pattern="^broadcast$"))
-    application.add_handler(
-        MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO, broadcast_handlers.handle_broadcast_content))
+
+    # Обработка текстовых сообщений
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, user_handlers.handle_all_messages))
 
     # Запуск бота
+    print("Бот запущен...")
     application.run_polling()
 
 

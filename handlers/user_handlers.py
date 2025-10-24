@@ -144,3 +144,36 @@ async def edit_registration(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['registration_step'] = 0
     await query.edit_message_text("Давайте начнем регистрацию заново.")
     await ask_registration_data(update, context)
+
+    async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик всех текстовых сообщений"""
+        user_id = update.effective_user.id
+
+        # Проверяем, ожидаем ли мы ввод данных для регистрации
+        if context.user_data.get('registration_step') is not None:
+            await handle_registration_data(update, context)
+        # Проверяем, ожидаем ли мы ввод суммы для списания
+        elif context.user_data.get('awaiting_redemption_amount'):
+            await redemption_handlers.handle_redemption_confirmation(update, context)
+        # Проверяем, ожидаем ли мы ввод данных для бронирования
+        elif context.user_data.get('awaiting_booking_data'):
+            await booking_handlers.handle_booking_data(update, context)
+        else:
+            await update.message.reply_text("Используйте кнопки меню для навигации.")
+
+
+async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик всех текстовых сообщений"""
+    user_id = update.effective_user.id
+
+    # Проверяем, ожидаем ли мы ввод данных для регистрации
+    if context.user_data.get('registration_step') is not None:
+        await handle_registration_data(update, context)
+    # Проверяем, ожидаем ли мы ввод суммы для списания
+    elif context.user_data.get('awaiting_redemption_amount'):
+        await redemption_handlers.handle_redemption_confirmation(update, context)
+    # Проверяем, ожидаем ли мы ввод данных для бронирования
+    elif context.user_data.get('awaiting_booking_data'):
+        await booking_handlers.handle_booking_data(update, context)
+    else:
+        await update.message.reply_text("Используйте кнопки меню для навигации.")

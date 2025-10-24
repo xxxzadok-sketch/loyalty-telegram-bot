@@ -1,12 +1,13 @@
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, ContextTypes
 import config
-from main import application as bot_application
 import logging
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
+
+# Инициализация бота
+from main import application as bot_application
 
 @app.route('/webhook', methods=['POST'])
 async def webhook():

@@ -1,15 +1,22 @@
 services:
   - type: web
-    name: loyalty-bot-webhook
+    name: telegram-loyalty-bot
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn main:app
+    startCommand: gunicorn bot:app
     envVars:
       - key: BOT_TOKEN
-        value: 8280338020:AAEPSrOAulipX1IYNGO_vppatAdsC0yc-t4
-      - key: WEBHOOK_URL
-        fromService:
-          type: web
-          name: loyalty-bot-webhook
-          property: url
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: loyalty-bot-db
+          property: connectionString
+
+databases:
+  - name: loyalty-bot-db
+    plan: free
+    databaseName: loyaltybot
+    user: loyaltyuser
