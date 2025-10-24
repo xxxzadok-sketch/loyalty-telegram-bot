@@ -1,125 +1,133 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, filters
-from database import Database
-from config import ADMIN_IDS
+from telegram.ext import ContextTypes
+from database import SessionLocal, User, RedemptionRequest
+from sqlalchemy.orm import Session
+import config
 
-# Состояния для списания баллов
-REDEEM_AMOUNT = range(1)
-
-db = Database()
-
-def get_bot():
-    from main import application
-    return application
 
 async def start_redemption(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    user = db.get_user_by_telegram_id(query.from_user.id)
-    if not user:
-        await query.edit_message_text("❌ Сначала зарегистрируйтесь с помощью /start")
-        return ConversationHandler.END
+    user_id = query.from_user.id
+    db: Session = SessionLocal()
 
-    if user[5] <= 0:
-        await query.edit_message_text("❌ У вас недостаточно баллов для списания.")
-        return ConversationHandler.END
-
-    context.user_data['redemption_user_id'] = user[0]
-    context.user_data['redemption_user_data'] = user
-
-    await query.edit_message_text(
-        f"🔄 Списание баллов\n\n"
-        f"💎 Доступно баллов: {user[5]}\n"
-        f"💡 1 бонусный балл = 1 рубль\n\n"
-        f"Введите количество баллов для списания:"
-    )
-    return REDEEM_AMOUNT
-
-
-async def get_redemption_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        points = int(update.message.text.strip())
-        user_data = context.user_data['redemption_user_data']
-
-        if points <= 0:
-            await update.message.reply_text("❌ Количество баллов должно быть положительным. Введите снова:")
-            return REDEEM_AMOUNT
-
-        if points > user_data[5]:
-            await update.message.reply_text(
-                f"❌ Недостаточно баллов. Доступно: {user_data[5]}\n"
-                f"Введите другое количество:"
+        user = db.query(User).filter(User.telegram_id == user_id).first()
+        if user and user.registration_complete:
+            await query.edit_message_text(
+                f"Ваш текущий баланс: {user.bonus_balance} баллов\n\n"
+                "Введите количество баллов для списания:"
             )
-            return REDEEM_AMOUNT
+            context.user_data['awaiting_redemption_amount'] = True
+        else:
+            await query.edit_message_text("Пожалуйста, завершите регистрацию.")
 
-        # Создаем запрос на списание
+    finally:
+        db.close()
+
+
+async def handle_redemption_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if context.user_data.get('awaiting_redemption_amount'):
         try:
-            request_id = db.create_redemption_request(context.user_data['redemption_user_id'], points)
+            amount = int(update.message.text)
+            user_id = update.effective_user.id
 
-            # Уведомляем админов
-            bot_app = get_bot()
-            user = user_data
+            db: Session = SessionLocal()
 
-            for admin_id in ADMIN_IDS:
-                try:
-                    keyboard = [
-                        [
-                            InlineKeyboardButton("✅ Подтвердить", callback_data=f"admin_approve_{request_id}"),
-                            InlineKeyboardButton("❌ Отклонить", callback_data=f"admin_reject_{request_id}")
-                        ]
-                    ]
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-
-                    admin_message = f"""
-🔄 ЗАПРОС НА СПИСАНИЕ БАЛЛОВ
-
-👤 Пользователь: {user[2]} {user[3]}
-🆔 ID: {user[0]}
-📱 Телефон: {user[4]}
-💎 Запрошено баллов: {points}
-💰 Сумма: {points} руб.
-📅 Запрос: #{request_id}
-                    """
-
-                    await bot_app.bot.send_message(
-                        admin_id,
-                        admin_message,
-                        reply_markup=reply_markup
+            try:
+                user = db.query(User).filter(User.telegram_id == user_id).first()
+                if user and user.bonus_balance >= amount:
+                    # Создаем запрос на списание
+                    redemption_request = RedemptionRequest(
+                        user_id=user.id,
+                        amount=amount
                     )
-                except Exception as e:
-                    print(f"Ошибка отправки админу {admin_id}: {e}")
+                    db.add(redemption_request)
+                    db.commit()
 
-            success_text = f"""
-✅ Запрос на списание отправлен!
+                    # Уведомляем администраторов
+                    await notify_admins_about_redemption(context, user, redemption_request)
 
-💎 Баллов к списанию: {points}
-💰 Сумма: {points} руб.
+                    await update.message.reply_text(
+                        f"Запрос на списание {amount} баллов отправлен администратору. "
+                        f"Ожидайте подтверждения."
+                    )
+                else:
+                    await update.message.reply_text("Недостаточно баллов на счете.")
 
-⏳ Ожидайте подтверждения администратора.
-Мы уведомим вас о результате.
-            """
+            finally:
+                db.close()
 
-            keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+        except ValueError:
+            await update.message.reply_text("Пожалуйста, введите число.")
 
-            await update.message.reply_text(success_text, reply_markup=reply_markup)
-
-        except Exception as e:
-            error_msg = "❌ Произошла ошибка при создании запроса. Попробуйте позже."
-            if "Недостаточно баллов" in str(e):
-                error_msg = "❌ Недостаточно баллов для списания."
-            await update.message.reply_text(error_msg)
-
-        context.user_data.clear()
-        return ConversationHandler.END
-
-    except ValueError:
-        await update.message.reply_text("❌ Пожалуйста, введите корректное число:")
-        return REDEEM_AMOUNT
+        context.user_data['awaiting_redemption_amount'] = False
 
 
-async def cancel_redemption(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Списание баллов отменено.")
-    context.user_data.clear()
-    return ConversationHandler.END
+async def notify_admins_about_redemption(context, user, redemption_request):
+    message = f"🎁 Запрос на списание баллов!\n\n"
+    message += f"Пользователь: {user.first_name} {user.last_name}\n"
+    message += f"ID: {user.id}\n"
+    message += f"Телефон: {user.phone}\n"
+    message += f"Сумма: {redemption_request.amount} баллов\n"
+    message += f"Текущий баланс: {user.bonus_balance}"
+
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Подтвердить", callback_data=f"admin_redeem_confirm_{redemption_request.id}"),
+            InlineKeyboardButton("❌ Отклонить", callback_data=f"admin_redeem_reject_{redemption_request.id}")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await context.bot.send_message(
+                chat_id=admin_id,
+                text=message,
+                reply_markup=reply_markup
+            )
+        except:
+            pass
+
+
+async def handle_admin_redemption(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    action, request_id = query.data.split('_')[2], int(query.data.split('_')[3])
+
+    db: Session = SessionLocal()
+
+    try:
+        redemption_request = db.query(RedemptionRequest).filter(RedemptionRequest.id == request_id).first()
+        if redemption_request:
+            user = db.query(User).filter(User.id == redemption_request.user_id).first()
+
+            if action == 'confirm' and user.bonus_balance >= redemption_request.amount:
+                user.bonus_balance -= redemption_request.amount
+                redemption_request.status = 'approved'
+                db.commit()
+
+                # Уведомляем пользователя
+                try:
+                    await context.bot.send_message(
+                        chat_id=user.telegram_id,
+                        text=f"С вашего счета списано {redemption_request.amount} бонусных баллов.\n"
+                             f"Новый баланс: {user.bonus_balance}"
+                    )
+                except:
+                    pass
+
+                await query.edit_message_text(f"Списание подтверждено. Пользователь уведомлен.")
+            else:
+                redemption_request.status = 'rejected'
+                db.commit()
+                await query.edit_message_text("Списание отклонено.")
+
+    finally:
+        db.close()

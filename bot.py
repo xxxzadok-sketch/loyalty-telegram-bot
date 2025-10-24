@@ -1,122 +1,22 @@
-# bot.py
-import logging
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, filters
+from flask import Flask, request
 from telegram import Update
-from telegram.ext import ContextTypes
-from database import Database
+from telegram.ext import Application, ContextTypes
+import config
+from main import application as bot_application
+import logging
 
-# Импорт обработчиков
-from handlers.user_handlers import *
-from handlers.booking_handlers import *
-from handlers.redemption_handlers import *
-from handlers.admin_handlers import *
-from handlers.broadcast_handlers import *
+app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
 
-logger = logging.getLogger(__name__)
+@app.route('/webhook', methods=['POST'])
+async def webhook():
+    update = Update.de_json(request.get_json(), bot_application.bot)
+    await bot_application.process_update(update)
+    return 'OK', 200
 
-def create_application():
-    """Создание и настройка приложения бота"""
-    from config import BOT_TOKEN
+@app.route('/')
+def index():
+    return 'Bot is running!'
 
-    if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN не найден")
-
-    # Инициализация базы данных
-    db = Database()
-    logger.info("✅ База данных инициализирована")
-
-    # Создание приложения
-    application = Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
-
-    # Настройка обработчиков
-    setup_handlers(application)
-    logger.info("✅ Обработчики настроены")
-
-    return application
-
-def setup_handlers(app):
-    """Настройка всех обработчиков"""
-    # Обработчик регистрации пользователя - УБРАТЬ persistent=True
-    reg_conv_handler = ConversationHandler(
-    entry_points=[CommandHandler('start', start)],
-    states={
-        FIRST_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_first_name)],
-        LAST_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_last_name)],
-        PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
-        CONFIRM: [CallbackQueryHandler(confirm_registration, pattern='^confirm_')]
-    },
-    fallbacks=[
-        CommandHandler('cancel', cancel_registration),
-        CommandHandler('start', start),  # ⭐ Позволяет перезапустить
-        MessageHandler(filters.ALL, fallback_handler)  # ⭐ Обрабатывает любые сообщения
-    ],
-    name="user_registration"
-)
-
-# ⭐ ДОБАВЬТЕ эту функцию
-async def fallback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик для любых непонятных сообщений"""
-    logger.warning(f"⚠️ Необработанное сообщение от {update.effective_user.id}: {update.message.text}")
-    await update.message.reply_text("❌ Не понимаю команду. Используйте /start для регистрации или /menu для главного меню.")
-    return ConversationHandler.END
-
-    # Обработчик бронирования стола - ТАКЖЕ УБРАТЬ
-    book_conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(start_booking, pattern='^book_table$')],
-        states={
-            BOOK_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_booking_date)],
-            BOOK_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_booking_time)],
-            BOOK_GUESTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_booking_guests)],
-            BOOK_CONFIRM: [CallbackQueryHandler(confirm_booking, pattern='^booking_')]
-        },
-        fallbacks=[CommandHandler('cancel', cancel_booking)],
-        name="table_booking"
-        # ⚠️ УБРАТЬ persistent=True и allow_reentry=True
-    )
-
-    # Обработчик списания баллов - ТАКЖЕ УБРАТЬ
-    redeem_conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(start_redemption, pattern='^redeem_points$')],
-        states={
-            REDEEM_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_redemption_amount)]
-        },
-        fallbacks=[CommandHandler('cancel', cancel_redemption)],
-        name="points_redemption"
-        # ⚠️ УБРАТЬ persistent=True и allow_reentry=True
-    )
-
-    # Добавляем все обработчики
-    app.add_handler(reg_conv_handler)
-    app.add_handler(book_conv_handler)
-    app.add_handler(redeem_conv_handler)
-
-    # Обработчики команд
-    app.add_handler(CommandHandler('admin', admin_handler))
-    app.add_handler(CommandHandler('menu', menu_command))
-
-    # Обработчики callback запросов
-    app.add_handler(CallbackQueryHandler(user_button_handler, pattern='^(balance|history|main_menu)$'))
-    app.add_handler(CallbackQueryHandler(admin_button_handler, pattern='^admin_'))
-    app.add_handler(CallbackQueryHandler(admin_back_handler, pattern='^admin_back$'))
-
-    # Обработчик текстовых сообщений для помощи
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, help_handler))
-
-async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик текстовых сообщений"""
-    help_text = """
-🤖 Команды бота:
-
-/start - Начать регистрацию
-/menu - Главное меню
-/admin - Панель администратора (только для админов)
-
-💎 Система лояльности:
-• Регистрация с получением 100 бонусных баллов
-• Бронирование столов
-• Списание баллов (требует подтверждения админа)
-• История операций
-
-🎫 Для бронирования стола используйте кнопку в меню.
-    """
-    await update.message.reply_text(help_text)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)

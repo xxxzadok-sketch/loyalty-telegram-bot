@@ -1,15 +1,6 @@
-# Environment
 .env
-*.env
-config_local.py
-.env.local
-.env.prod
-
-# Config files
-*.yaml
-*.yml
-render.yaml
-
-# Database
-*.db
-*.sqlite3
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store

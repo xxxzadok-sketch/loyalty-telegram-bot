@@ -1,137 +1,88 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, filters
-from database import Database
-
-# Состояния для бронирования
-BOOK_DATE, BOOK_TIME, BOOK_GUESTS, BOOK_CONFIRM = range(4)
-
-db = Database()
+from telegram.ext import ContextTypes
+from database import SessionLocal, User, Booking
+from sqlalchemy.orm import Session
 
 
 async def start_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    user = db.get_user_by_telegram_id(query.from_user.id)
-    if not user:
-        await query.edit_message_text("❌ Сначала зарегистрируйтесь с помощью /start")
-        return ConversationHandler.END
-
-    context.user_data['booking_user_id'] = user[0]
+    context.user_data['booking_step'] = 0
     await query.edit_message_text(
-        "🎫 Бронирование стола\n\n"
-        "Пожалуйста, введите дату бронирования (в формате ДД.ММ.ГГГГ):\n"
-        "Например: 25.12.2024"
+        "🎯 Бронирование стола\n\n"
+        "Пожалуйста, введите данные в следующем формате:\n"
+        "Дата (ДД.ММ.ГГГГ) Время (ЧЧ:ММ) Количество гостей\n\n"
+        "Например: 25.12.2024 19:30 4"
     )
-    return BOOK_DATE
 
 
-async def get_booking_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    date = update.message.text.strip()
+async def handle_booking_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text
 
-    # Простая валидация даты
-    if len(date) != 10 or date[2] != '.' or date[5] != '.':
-        await update.message.reply_text("❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ:\nНапример: 25.12.2024")
-        return BOOK_DATE
+    db: Session = SessionLocal()
 
-    context.user_data['booking_date'] = date
-    await update.message.reply_text(
-        "⏰ Теперь введите время бронирования (в формате ЧЧ:ММ):\n"
-        "Например: 19:30"
-    )
-    return BOOK_TIME
-
-
-async def get_booking_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    time = update.message.text.strip()
-
-    # Простая валидация времени
-    if len(time) != 5 or time[2] != ':':
-        await update.message.reply_text("❌ Неверный формат времени. Используйте ЧЧ:ММ:\nНапример: 19:30")
-        return BOOK_TIME
-
-    context.user_data['booking_time'] = time
-    await update.message.reply_text("👥 Введите количество гостей:")
-    return BOOK_GUESTS
-
-
-async def get_booking_guests(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        guests = int(update.message.text.strip())
+        user = db.query(User).filter(User.telegram_id == user_id, User.registration_complete == True).first()
+        if not user:
+            await update.message.reply_text("Пожалуйста, завершите регистрацию через /start")
+            return
 
-        if guests <= 0 or guests > 20:
-            await update.message.reply_text("❌ Количество гостей должно быть от 1 до 20. Введите корректное число:")
-            return BOOK_GUESTS
-
-        context.user_data['booking_guests'] = guests
-
-        # Показываем подтверждение
-        keyboard = [
-            [InlineKeyboardButton("✅ Подтвердить бронирование", callback_data="booking_confirm")],
-            [InlineKeyboardButton("✏️ Изменить данные", callback_data="booking_edit")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        booking_text = f"""
-📋 Проверьте данные бронирования:
-
-📅 Дата: {context.user_data['booking_date']}
-⏰ Время: {context.user_data['booking_time']}
-👥 Гости: {guests} человек
-
-Всё верно?
-        """
-
-        await update.message.reply_text(booking_text, reply_markup=reply_markup)
-        return BOOK_CONFIRM
-
-    except ValueError:
-        await update.message.reply_text("❌ Пожалуйста, введите корректное число гостей:")
-        return BOOK_GUESTS
-
-
-async def confirm_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "booking_confirm":
-        user_id = context.user_data['booking_user_id']
-        date = context.user_data['booking_date']
-        time = context.user_data['booking_time']
-        guests = context.user_data['booking_guests']
-
+        # Парсим введенные данные
         try:
-            booking_id = db.create_booking(user_id, date, time, guests)
+            parts = text.split()
+            if len(parts) != 3:
+                raise ValueError
 
-            booking_text = f"""
-✅ Бронирование подтверждено!
+            date_str, time_str, guests_str = parts
+            guests = int(guests_str)
 
-🎫 Номер брони: #{booking_id}
-📅 Дата: {date}
-⏰ Время: {time}
-👥 Гости: {guests} человек
+            # Создаем бронирование
+            booking = Booking(
+                user_id=user.id,
+                date=date_str,
+                time=time_str,
+                guests=guests
+            )
+            db.add(booking)
+            db.commit()
 
-🎉 Ждем вас в нашем заведении!
-💎 Не забудьте предъявить ваш ID: {user_id}
-            """
+            # Уведомляем администратора
+            await notify_admin_about_booking(context, user, booking)
 
-            keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                f"✅ Бронирование принято!\n\n"
+                f"Дата: {date_str}\n"
+                f"Время: {time_str}\n"
+                f"Гости: {guests} чел.\n\n"
+                f"Мы свяжемся с вами для подтверждения."
+            )
 
-            await query.edit_message_text(booking_text, reply_markup=reply_markup)
+        except ValueError:
+            await update.message.reply_text(
+                "Неверный формат. Пожалуйста, введите данные в формате:\n"
+                "Дата Время Количество_гостей\n\n"
+                "Например: 25.12.2024 19:30 4"
+            )
 
-        except Exception as e:
-            await query.edit_message_text("❌ Произошла ошибка при бронировании. Пожалуйста, попробуйте позже.")
-
-        context.user_data.clear()
-        return ConversationHandler.END
-
-    else:
-        await query.edit_message_text("🎫 Введите дату бронирования (ДД.ММ.ГГГГ):")
-        return BOOK_DATE
+    finally:
+        db.close()
 
 
-async def cancel_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Бронирование отменено.")
-    context.user_data.clear()
-    return ConversationHandler.END
+async def notify_admin_about_booking(context, user, booking):
+    message = f"🎯 Новое бронирование!\n\n"
+    message += f"Пользователь: {user.first_name} {user.last_name}\n"
+    message += f"ID: {user.id}\n"
+    message += f"Телефон: {user.phone}\n"
+    message += f"Дата: {booking.date}\n"
+    message += f"Время: {booking.time}\n"
+    message += f"Гости: {booking.guests} чел."
+
+    # Отправляем всем администраторам
+    from config import ADMIN_IDS
+    for admin_id in ADMIN_IDS:
+        try:
+            await context.bot.send_message(chat_id=admin_id, text=message)
+        except:
+            pass

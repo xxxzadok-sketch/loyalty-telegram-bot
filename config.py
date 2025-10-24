@@ -1,17 +1,8 @@
 import os
+from dotenv import load_dotenv
 
-# Используем os.environ для Render
-BOT_TOKEN = os.environ.get('BOT_TOKEN')
+load_dotenv()
 
-if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN not found in environment variables!")
-
-ADMIN_IDS = [356633485]  # Замени на свой ID
-
-BOT_CONFIG = {
-    'welcome_bonus': 100,
-    'cashback_percent': 5,
-    'max_user_id': 3000
-}
-
-print(f"✅ BOT_TOKEN loaded: {BOT_TOKEN[:10]}...")  # Для отладки
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+ADMIN_IDS = [int(id.strip()) for id in os.getenv('ADMIN_IDS', '').split(',') if id.strip()]
+DATABASE_URL = os.getenv('DATABASE_URL')

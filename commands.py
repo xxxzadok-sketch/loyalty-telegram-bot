@@ -1,23 +1,18 @@
-# commands.py
-from telegram import Bot
-from config import BOT_TOKEN
+from telegram import Update
+from telegram.ext import ContextTypes
+from database import SessionLocal, User
+from sqlalchemy.orm import Session
 
 
-async def set_bot_commands():
-    """Установка команд меню бота"""
-    bot = Bot(token=BOT_TOKEN)
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    db: Session = SessionLocal()
 
-    commands = [
-        ('start', 'Начать регистрацию'),
-        ('menu', 'Главное меню'),
-        ('admin', 'Панель администратора')
-    ]
-
-    await bot.set_my_commands(commands)
-    print("✅ Команды бота установлены")
-
-
-if __name__ == '__main__':
-    import asyncio
-
-    asyncio.run(set_bot_commands())
+    try:
+        user = db.query(User).filter(User.telegram_id == user_id).first()
+        if user and user.registration_complete:
+            await update.message.reply_text(f"Ваш баланс: {user.bonus_balance} бонусных баллов")
+        else:
+            await update.message.reply_text("Пожалуйста, завершите регистрацию через /start")
+    finally:
+        db.close()

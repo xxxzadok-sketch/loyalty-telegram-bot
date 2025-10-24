@@ -1,121 +1,63 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, filters
-from database import Database
-from config import ADMIN_IDS
+from telegram.ext import ContextTypes
+from database import SessionLocal, User
+from sqlalchemy.orm import Session
+import config
 
-# Состояния для рассылки
-BROADCAST_MESSAGE, BROADCAST_CONFIRM = range(2)
-
-db = Database()
-
-def get_bot():
-    from main import application
-    return application
 
 async def start_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if query.from_user.id not in ADMIN_IDS:
-        await query.edit_message_text("❌ Доступ запрещен")
-        return ConversationHandler.END
+    user_id = query.from_user.id
 
+    if user_id not in config.ADMIN_IDS:
+        await query.edit_message_text("У вас нет доступа к этой функции.")
+        return
+
+    context.user_data['awaiting_broadcast'] = True
     await query.edit_message_text(
-        "📢 Рассылка сообщения\n\n"
         "Отправьте сообщение для рассылки (текст, фото или видео):"
     )
-    return BROADCAST_MESSAGE
 
 
-async def get_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Сохраняем сообщение для рассылки
-    context.user_data['broadcast_message'] = {
-        'text': update.message.text if update.message.text else update.message.caption,
-        'photo': update.message.photo[-1].file_id if update.message.photo else None,
-        'video': update.message.video.file_id if update.message.video else None
-    }
+async def handle_broadcast_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
 
-    users = db.get_all_users()
-    context.user_data['broadcast_users_count'] = len(users)
+    if user_id not in config.ADMIN_IDS or not context.user_data.get('awaiting_broadcast'):
+        return
 
-    confirm_text = f"""
-📢 Подтверждение рассылки:
+    db: Session = SessionLocal()
 
-👥 Получателей: {len(users)} пользователей
-📝 Сообщение: {context.user_data['broadcast_message']['text'][:100]}...
-
-✅ Начать рассылку?
-    """
-
-    keyboard = [
-        [InlineKeyboardButton("✅ Начать рассылку", callback_data="broadcast_confirm")],
-        [InlineKeyboardButton("❌ Отменить", callback_data="broadcast_cancel")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(confirm_text, reply_markup=reply_markup)
-    return BROADCAST_CONFIRM
-
-
-async def confirm_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "broadcast_confirm":
-        users = db.get_all_users()
-        broadcast_data = context.user_data['broadcast_message']
+    try:
+        users = db.query(User).filter(User.registration_complete == True).all()
         sent_count = 0
-        failed_count = 0
 
-        # Отправляем сообщение о начале рассылки
-        await query.edit_message_text(f"📢 Начата рассылка...\n\n👥 Отправка для {len(users)} пользователей")
-
-        bot_app = get_bot()
-
-        # Рассылаем сообщение
         for user in users:
             try:
-                if broadcast_data['photo']:
-                    await bot_app.bot.send_photo(
-                        chat_id=user[1],
-                        photo=broadcast_data['photo'],
-                        caption=broadcast_data['text']
+                if update.message.text:
+                    await context.bot.send_message(
+                        chat_id=user.telegram_id,
+                        text=update.message.text
                     )
-                elif broadcast_data['video']:
-                    await bot_app.bot.send_video(
-                        chat_id=user[1],
-                        video=broadcast_data['video'],
-                        caption=broadcast_data['text']
+                elif update.message.photo:
+                    await context.bot.send_photo(
+                        chat_id=user.telegram_id,
+                        photo=update.message.photo[-1].file_id,
+                        caption=update.message.caption
                     )
-                else:
-                    await bot_app.bot.send_message(
-                        chat_id=user[1],
-                        text=broadcast_data['text']
+                elif update.message.video:
+                    await context.bot.send_video(
+                        chat_id=user.telegram_id,
+                        video=update.message.video.file_id,
+                        caption=update.message.caption
                     )
                 sent_count += 1
-            except Exception as e:
-                print(f"Ошибка отправки пользователю {user[0]}: {e}")
-                failed_count += 1
+            except:
+                continue  # Пользователь заблокировал бота
 
-        # Отчет о рассылке
-        report_text = f"""
-📢 Рассылка завершена:
+        await update.message.reply_text(f"Рассылка завершена. Сообщение отправлено {sent_count} пользователям.")
 
-✅ Успешно отправлено: {sent_count}
-❌ Не удалось отправить: {failed_count}
-👥 Всего пользователей: {len(users)}
-        """
-
-        await query.message.reply_text(report_text)
-
-    else:
-        await query.edit_message_text("❌ Рассылка отменена")
-
-    context.user_data.clear()
-    return ConversationHandler.END
-
-
-async def cancel_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Рассылка отменена.")
-    context.user_data.clear()
-    return ConversationHandler.END
+    finally:
+        db.close()
+        context.user_data['awaiting_broadcast'] = False
