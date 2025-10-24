@@ -4,7 +4,8 @@ from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import config
 
-engine = create_engine(config.DATABASE_URL)
+# Используем psycopg3 connection string
+engine = create_engine(config.DATABASE_URL.replace('postgresql://', 'postgresql+psycopg://'))
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
