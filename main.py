@@ -130,10 +130,13 @@ def init_bot():
 
     # Устанавливаем webhook СИНХРОННО
     webhook_url = os.environ.get('RENDER_EXTERNAL_URL', '') + '/webhook'
+    # В init_bot() для webhook:
     if webhook_url and webhook_url.startswith('https://'):
         try:
-            # Используем run_method для синхронного вызова асинхронной функции
-            application.run_method(lambda: application.bot.set_webhook(webhook_url))
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(application.bot.set_webhook(webhook_url))
+            loop.close()
             logger.info(f"✅ Webhook установлен: {webhook_url}")
         except Exception as e:
             logger.error(f"❌ Ошибка установки webhook: {e}")
@@ -151,13 +154,17 @@ application = init_bot()
 def webhook():
     """Обработчик webhook от Telegram"""
     try:
-        # Обрабатываем обновление от Telegram
         update = Update.de_json(request.get_json(), application.bot)
 
-        # Используем run_method для синхронного вызова асинхронной функции
-        application.run_method(lambda: application.process_update(update))
+        # Создаем новое событийное loop для асинхронной обработки
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(application.process_update(update))
+            return 'ok'
+        finally:
+            loop.close()
 
-        return 'ok'
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return 'error', 500
