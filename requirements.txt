@@ -1,6 +1,6 @@
 python-telegram-bot==20.7
 python-dotenv==1.0.0
-sqlalchemy==2.0.23
+sqlalchemy==1.4.50
 psycopg2-binary==2.9.9
 gunicorn==21.2.0
 flask==2.3.3
