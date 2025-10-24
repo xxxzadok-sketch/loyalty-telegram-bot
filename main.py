@@ -112,17 +112,14 @@ def index():
 
 
 @app.route('/webhook', methods=['POST'])
-async def webhook():
+def webhook():
     """Обработчик webhook от Telegram"""
     try:
-        if not application:
-            return 'Bot not initialized', 500
-
-        # Обрабатываем обновление от Telegram
+        # Обрабатываем обновление от Telegram СИНХРОННО
         update = Update.de_json(request.get_json(), application.bot)
 
-        # Асинхронно обрабатываем обновление
-        await application.process_update(update)
+        # Используем run_async для асинхронной обработки
+        application.update_queue.put(update)
 
         return 'ok'
     except Exception as e:
