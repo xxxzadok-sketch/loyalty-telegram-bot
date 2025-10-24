@@ -10,6 +10,9 @@ from handlers.redemption_handlers import *
 from handlers.admin_handlers import *
 from handlers.broadcast_handlers import *
 
+# ДОБАВЬТЕ ЭТУ СТРОКУ:
+from main import help_handler
+
 logger = logging.getLogger(__name__)
 
 
