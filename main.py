@@ -36,6 +36,7 @@ def set_commands():
         logger.error(f"❌ Ошибка установки команд: {e}")
 
 
+# В main.py функция init_bot() должна выглядеть так:
 def init_bot():
     """Инициализация бота"""
     global application
@@ -45,11 +46,10 @@ def init_bot():
         application = create_application()
         logger.info("✅ Приложение бота создано")
 
-        # Инициализируем приложение
+        # Инициализируем приложение (БЕЗ application.start())
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(application.initialize())
-        loop.run_until_complete(application.start())  # ← ДОБАВЬТЕ ЭТУ СТРОКУ
         logger.info("✅ Приложение инициализировано")
 
         # Устанавливаем webhook
@@ -78,34 +78,38 @@ def webhook():
         return 'error', 500
 
     try:
-        # Обрабатываем обновление от Telegram
+        # Получаем обновление
         update_data = request.get_json()
+
+        # Логируем входящее сообщение
+        if 'message' in update_data and 'text' in update_data['message']:
+            user_id = update_data['message']['from']['id']
+            text = update_data['message']['text']
+            logger.info(f"📨 Сообщение от {user_id}: {text}")
+
+        # Создаем объект Update
         update = Update.de_json(update_data, application.bot)
 
-        # Запускаем обработку в отдельном потоке
-        import threading
-        def process_update():
+        # ⭐ ВАЖНО: Используем create_task для асинхронной обработки
+        import asyncio
+        async def process_async():
             try:
-                import asyncio
-                # Создаем новый event loop для этого потока
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
-                # Обрабатываем обновление
-                loop.run_until_complete(application.process_update(update))
-                loop.close()
+                await application.process_update(update)
+                logger.info("✅ Обновление обработано")
             except Exception as e:
-                logger.error(f"Error processing update: {e}")
+                if "Event loop is closed" not in str(e):
+                    logger.error(f"❌ Ошибка обработки: {e}")
 
-        # Запускаем в отдельном потоке
-        thread = threading.Thread(target=process_update)
-        thread.daemon = True
-        thread.start()
+        # Запускаем асинхронно
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(process_async())
+        loop.close()
 
         return 'ok'
 
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
+        logger.error(f"❌ Webhook error: {e}")
         return 'error', 500
 
 

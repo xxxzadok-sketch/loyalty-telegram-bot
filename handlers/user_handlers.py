@@ -14,12 +14,16 @@ FIRST_NAME, LAST_NAME, PHONE, CONFIRM = range(4)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    logger.info(f"🚀 /start от пользователя {user.id} ({user.first_name})")
+
     existing_user = db.get_user_by_telegram_id(user.id)
 
     if existing_user:
+        logger.info(f"✅ Пользователь {user.id} уже зарегистрирован")
         await show_main_menu(update, context)
         return ConversationHandler.END
     else:
+        logger.info(f"📝 Начата регистрация для {user.id}")
         await update.message.reply_text(
             "👋 Добро пожаловать! Давайте зарегистрируем вас в нашей системе лояльности.\n"
             "📝 Пожалуйста, введите ваше имя:"
@@ -28,7 +32,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def get_first_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['first_name'] = update.message.text.strip()
+    first_name = update.message.text.strip()
+    logger.info(f"📝 Имя от {update.effective_user.id}: {first_name}")
+
+    context.user_data['first_name'] = first_name
     if not context.user_data['first_name']:
         await update.message.reply_text("❌ Имя не может быть пустым. Пожалуйста, введите ваше имя:")
         return FIRST_NAME

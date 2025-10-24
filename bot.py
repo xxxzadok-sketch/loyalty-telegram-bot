@@ -38,17 +38,27 @@ def setup_handlers(app):
     """Настройка всех обработчиков"""
     # Обработчик регистрации пользователя - УБРАТЬ persistent=True
     reg_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={
-            FIRST_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_first_name)],
-            LAST_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_last_name)],
-            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
-            CONFIRM: [CallbackQueryHandler(confirm_registration, pattern='^confirm_')]
-        },
-        fallbacks=[CommandHandler('cancel', cancel_registration)],
-        name="user_registration"
-        # ⚠️ УБРАТЬ persistent=True и allow_reentry=True
-    )
+    entry_points=[CommandHandler('start', start)],
+    states={
+        FIRST_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_first_name)],
+        LAST_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_last_name)],
+        PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
+        CONFIRM: [CallbackQueryHandler(confirm_registration, pattern='^confirm_')]
+    },
+    fallbacks=[
+        CommandHandler('cancel', cancel_registration),
+        CommandHandler('start', start),  # ⭐ Позволяет перезапустить
+        MessageHandler(filters.ALL, fallback_handler)  # ⭐ Обрабатывает любые сообщения
+    ],
+    name="user_registration"
+)
+
+# ⭐ ДОБАВЬТЕ эту функцию
+async def fallback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик для любых непонятных сообщений"""
+    logger.warning(f"⚠️ Необработанное сообщение от {update.effective_user.id}: {update.message.text}")
+    await update.message.reply_text("❌ Не понимаю команду. Используйте /start для регистрации или /menu для главного меню.")
+    return ConversationHandler.END
 
     # Обработчик бронирования стола - ТАКЖЕ УБРАТЬ
     book_conv_handler = ConversationHandler(
