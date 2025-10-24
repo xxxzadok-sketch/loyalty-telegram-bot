@@ -8,6 +8,9 @@ REDEEM_AMOUNT = range(1)
 
 db = Database()
 
+def get_bot():
+    from main import application
+    return application
 
 async def start_redemption(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -55,7 +58,7 @@ async def get_redemption_amount(update: Update, context: ContextTypes.DEFAULT_TY
             request_id = db.create_redemption_request(context.user_data['redemption_user_id'], points)
 
             # Уведомляем админов
-            from main import application
+            bot_app = get_bot()
             user = user_data
 
             for admin_id in ADMIN_IDS:
@@ -79,7 +82,7 @@ async def get_redemption_amount(update: Update, context: ContextTypes.DEFAULT_TY
 📅 Запрос: #{request_id}
                     """
 
-                    await application.bot.send_message(
+                    await bot_app.bot.send_message(
                         admin_id,
                         admin_message,
                         reply_markup=reply_markup

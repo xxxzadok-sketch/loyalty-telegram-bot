@@ -13,6 +13,9 @@ ADMIN_ADD_POINTS_USER, ADMIN_ADD_POINTS_AMOUNT = range(2)
 ADMIN_REMOVE_POINTS_USER, ADMIN_REMOVE_POINTS_AMOUNT = range(2, 4)
 ADMIN_ADD_PURCHASE_USER, ADMIN_ADD_PURCHASE_AMOUNT = range(4, 6)
 
+def get_bot():
+    from main import application
+    return application
 
 async def admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /admin"""
@@ -168,7 +171,7 @@ async def process_redemption_request(query, approve=True):
             return
 
         # Уведомляем пользователя
-        from main import application
+        bot_app = get_bot()
         try:
             if approve:
                 user_message = f"""
@@ -190,7 +193,7 @@ async def process_redemption_request(query, approve=True):
 📞 Для уточнения причин обратитесь к администратору.
                 """
 
-            await application.bot.send_message(user[1], user_message)
+            await bot_app.bot.send_message(user[1], user_message)
         except Exception as e:
             logger.error(f"Ошибка уведомления пользователя: {e}")
 
@@ -274,9 +277,9 @@ async def get_amount_for_add_points(update: Update, context: ContextTypes.DEFAUL
         db.update_user_points(user[0], amount, f"Начисление администратором")
 
         # Уведомляем пользователя
-        from main import application
+        bot_app = get_bot()
         try:
-            await application.bot.send_message(
+            await bot_app.bot.send_message(
                 user[1],
                 f"🎉 Вам начислены бонусные баллы!\n\n"
                 f"💎 +{amount} баллов\n"
@@ -358,9 +361,9 @@ async def get_amount_for_add_purchase(update: Update, context: ContextTypes.DEFA
         cashback = db.add_purchase(user[0], amount)
 
         # Уведомляем пользователя
-        from main import application
+        bot_app = get_bot()
         try:
-            await application.bot.send_message(
+            await bot_app.bot.send_message(
                 user[1],
                 f"🎉 Вам начислен кэшбек за покупку!\n\n"
                 f"💰 Сумма покупки: {amount} руб.\n"
@@ -450,9 +453,9 @@ async def get_amount_for_remove_points(update: Update, context: ContextTypes.DEF
         db.update_user_points(user[0], -amount, f"Списание администратором")
 
         # Уведомляем пользователя
-        from main import application
+        bot_app = get_bot()
         try:
-            await application.bot.send_message(
+            await bot_app.bot.send_message(
                 user[1],
                 f"📋 Уведомление о списании баллов\n\n"
                 f"💎 Списано: {amount} баллов\n"

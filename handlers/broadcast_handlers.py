@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, filters
 from database import Database
 from config import ADMIN_IDS
@@ -8,6 +8,9 @@ BROADCAST_MESSAGE, BROADCAST_CONFIRM = range(2)
 
 db = Database()
 
+def get_bot():
+    from main import application
+    return application
 
 async def start_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -44,7 +47,6 @@ async def get_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TY
 ✅ Начать рассылку?
     """
 
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     keyboard = [
         [InlineKeyboardButton("✅ Начать рассылку", callback_data="broadcast_confirm")],
         [InlineKeyboardButton("❌ Отменить", callback_data="broadcast_cancel")]
@@ -68,25 +70,25 @@ async def confirm_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Отправляем сообщение о начале рассылки
         await query.edit_message_text(f"📢 Начата рассылка...\n\n👥 Отправка для {len(users)} пользователей")
 
-        from main import application
+        bot_app = get_bot()
 
         # Рассылаем сообщение
         for user in users:
             try:
                 if broadcast_data['photo']:
-                    await application.bot.send_photo(
+                    await bot_app.bot.send_photo(
                         chat_id=user[1],
                         photo=broadcast_data['photo'],
                         caption=broadcast_data['text']
                     )
                 elif broadcast_data['video']:
-                    await application.bot.send_video(
+                    await bot_app.bot.send_video(
                         chat_id=user[1],
                         video=broadcast_data['video'],
                         caption=broadcast_data['text']
                     )
                 else:
-                    await application.bot.send_message(
+                    await bot_app.bot.send_message(
                         chat_id=user[1],
                         text=broadcast_data['text']
                     )
