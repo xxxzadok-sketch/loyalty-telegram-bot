@@ -132,7 +132,7 @@ def init_bot():
     # Устанавливаем webhook
     webhook_url = os.environ.get('RENDER_EXTERNAL_URL', '') + '/webhook'
     if webhook_url and webhook_url.startswith('https://'):
-        application.bot.set_webhook(webhook_url)
+        await application.bot.set_webhook(webhook_url)
         logger.info(f"✅ Webhook установлен: {webhook_url}")
     else:
         logger.info("ℹ️ Webhook URL не найден, используем polling")
