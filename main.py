@@ -25,8 +25,6 @@ logger = logging.getLogger(__name__)
 # Инициализация Flask
 app = Flask(__name__)
 
-# Глобальная переменная для application
-application = None
 
 
 def setup_handlers(app_instance):
@@ -111,81 +109,58 @@ def index():
     return "🤖 Telegram Loyalty Bot is running via Webhook!"
 
 
+# Перенесите инициализацию в глобальную область
+def init_bot():
+    """Инициализация бота"""
+    global application  # ← ДОБАВЬТЕ ЭТО
+
+    if not BOT_TOKEN:
+        logger.error("❌ BOT_TOKEN не найден")
+        return None  # ← ВОЗВРАЩАЕМ None если ошибка
+
+    # Инициализация базы данных
+    db = Database()
+    logger.info("✅ База данных инициализирована")
+
+    # Создание приложения
+    application = Application.builder().token(BOT_TOKEN).build()
+
+    # Настройка обработчиков
+    setup_handlers(application)
+    logger.info("✅ Обработчики настроены")
+
+    # Устанавливаем webhook
+    webhook_url = os.environ.get('RENDER_EXTERNAL_URL', '') + '/webhook'
+    if webhook_url and webhook_url.startswith('https://'):
+        application.bot.set_webhook(webhook_url)
+        logger.info(f"✅ Webhook установлен: {webhook_url}")
+    else:
+        logger.info("ℹ️ Webhook URL не найден, используем polling")
+
+    return application  # ← ВОЗВРАЩАЕМ application
+
+
+# Инициализируем бот сразу при импорте
+application = init_bot()
+
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Обработчик webhook от Telegram"""
+    global application  # ← ДОБАВЬТЕ ЭТО
+
+    if application is None:
+        logger.error("❌ Application не инициализирована")
+        return 'error', 500
+
     try:
-        # Обрабатываем обновление от Telegram СИНХРОННО
+        # Обрабатываем обновление от Telegram
         update = Update.de_json(request.get_json(), application.bot)
-
-        # Используем run_async для асинхронной обработки
-        application.update_queue.put(update)
-
+        application.update_queue.put(update)  # ← используем update_queue
         return 'ok'
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return 'error', 500
-
-
-async def init_bot():
-    """Инициализация бота"""
-    global application
-
-    logger.info("🚀 Инициализация бота...")
-
-    if not BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN не найден")
-        return False
-
-    logger.info(f"✅ BOT_TOKEN загружен: {BOT_TOKEN[:10]}...")
-
-    # Инициализация базы данных
-    try:
-        db = Database()
-        logger.info("✅ База данных инициализирована")
-    except Exception as e:
-        logger.error(f"❌ Ошибка БД: {e}")
-        return False
-
-    # Создание приложения с инициализацией для webhook
-    try:
-        application = (
-            Application.builder()
-            .token(BOT_TOKEN)
-            .build()
-        )
-
-        # Инициализируем приложение для webhook
-        await application.initialize()  # Это критически важно!
-
-        logger.info("✅ Приложение бота создано и инициализировано")
-    except Exception as e:
-        logger.error(f"❌ Ошибка создания приложения: {e}")
-        return False
-
-    # Настройка обработчиков
-    try:
-        setup_handlers(application)
-        logger.info("✅ Обработчики настроены")
-    except Exception as e:
-        logger.error(f"❌ Ошибка настройки обработчиков: {e}")
-        return False
-
-    # Устанавливаем webhook
-    webhook_url = os.environ.get('RENDER_EXTERNAL_URL', '') + '/webhook'
-
-    if webhook_url and webhook_url.startswith('https://'):
-        try:
-            await application.bot.delete_webhook()
-            await application.bot.set_webhook(webhook_url)
-            logger.info(f"✅ Webhook установлен: {webhook_url}")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Ошибка webhook: {e}")
-            return False
-    else:
-        logger.error("❌ Webhook URL не найден")
-        return False
 
 
 async def main():
